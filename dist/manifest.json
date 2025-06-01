@@ -1,0 +1,34 @@
+{
+  "manifest_version": 3,
+  "name": "LSAT Demon Performance Analyzer",
+  "version": "1.0.0",
+  "description": "Analyze your LSAT Demon performance by question type and difficulty",
+  "permissions": [
+    "activeTab",
+    "storage",
+    "scripting"
+  ],
+  "host_permissions": [
+    "https://www.lsatdemon.com/*"
+  ],
+  "content_scripts": [
+    {
+      "matches": ["https://www.lsatdemon.com/*"],
+      "js": ["content.js"],
+      "run_at": "document_end"
+    }
+  ],
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "LSAT Demon Analyzer"
+  },
+  "background": {
+    "service_worker": "background.js"
+  },
+  "web_accessible_resources": [
+    {
+      "resources": ["injected.js"],
+      "matches": ["https://www.lsatdemon.com/*"]
+    }
+  ]
+} 
