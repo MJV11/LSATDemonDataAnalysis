@@ -7,11 +7,20 @@
   
   let collectionLogs = [];
   let showLogs = false;
+  let messageListener = null;
+  let isProcessingMessage = false;
   
   async function startCollection() {
     isCollecting = true;
     collectionLogs = [];
     showLogs = true;
+    isProcessingMessage = false;
+    
+    // Clean up any existing listener first
+    if (messageListener) {
+      chrome.runtime.onMessage.removeListener(messageListener);
+      messageListener = null;
+    }
     
     dispatch('collectionStart');
     addLog('Starting data collection...');
@@ -32,52 +41,25 @@
       }
       
       addLog(`Found LSAT Demon page: ${tab.url}`);
-      addLog('Injecting content script...');
+      addLog('Executing collection script...');
       
-      // Set up message listener first
-      chrome.runtime.onMessage.addListener(handleMessage);
+      // Set up message listener - create a new function reference each time
+      messageListener = (message, sender, sendResponse) => {
+        handleMessage(message, sender, sendResponse);
+      };
+      chrome.runtime.onMessage.addListener(messageListener);
       
-      // Method 1: Try injected script approach
+      // Execute direct collection script
       try {
         await chrome.scripting.executeScript({
           target: { tabId: tab.id },
-          function: collectLSATData
+          function: directCollectionScript
         });
-        addLog('Content script injected, waiting for data...');
-      } catch (injectionError) {
-        addLog(`Injection failed: ${injectionError.message}`);
+        addLog('Collection script executed');
+      } catch (execError) {
+        addLog(`Script execution failed: ${execError.message}`);
+        throw execError;
       }
-      
-      // Method 2: Try direct content script communication
-      setTimeout(async () => {
-        if (isCollecting) {
-          addLog('Trying direct content script communication...');
-          try {
-            await chrome.tabs.sendMessage(tab.id, {
-              type: 'START_LSAT_COLLECTION'
-            });
-            addLog('Direct message sent to content script');
-          } catch (directError) {
-            addLog(`Direct communication failed: ${directError.message}`);
-          }
-        }
-      }, 2000);
-      
-      // Method 3: Try executing collection directly
-      setTimeout(async () => {
-        if (isCollecting) {
-          addLog('Trying direct script execution...');
-          try {
-            await chrome.scripting.executeScript({
-              target: { tabId: tab.id },
-              function: directCollectionScript
-            });
-            addLog('Direct collection script executed');
-          } catch (directExecError) {
-            addLog(`Direct execution failed: ${directExecError.message}`);
-          }
-        }
-      }, 4000);
       
       // Set a timeout in case nothing happens
       setTimeout(() => {
@@ -89,9 +71,12 @@
           });
           dispatch('collectionEnd');
           isCollecting = false;
-          chrome.runtime.onMessage.removeListener(handleMessage);
+          if (messageListener) {
+            chrome.runtime.onMessage.removeListener(messageListener);
+            messageListener = null;
+          }
         }
-      }, 15000); // Increased to 15 seconds
+      }, 10000);
       
     } catch (error) {
       console.error('Collection error:', error);
@@ -102,6 +87,10 @@
       });
       dispatch('collectionEnd');
       isCollecting = false;
+      if (messageListener) {
+        chrome.runtime.onMessage.removeListener(messageListener);
+        messageListener = null;
+      }
     }
   }
   
@@ -109,11 +98,29 @@
     console.log('Received message:', message);
     
     if (message.type === 'LSAT_DATA_UPDATE') {
+      // Prevent double processing
+      if (isProcessingMessage) {
+        console.log('Already processing message, ignoring duplicate');
+        return;
+      }
+      
+      isProcessingMessage = true;
+      
       addLog(`${message.status}`);
       
-      if (message.data && message.data.length > 0) {
-        message.data.forEach((question, index) => {
-          addLog(`Q${question.questionNumber}: ${question.questionType} - ${question.correct ? 'Correct' : 'Incorrect'} ${question.correct === null ? 'Unknown' : ''}`);
+      // Log only the newly collected questions with deduplication
+      if (message.newQuestions && message.newQuestions.length > 0) {
+        const loggedQuestions = new Set();
+        
+        message.newQuestions.forEach((question) => {
+          const logKey = `Q${question.questionNumber}:${question.questionType}:${question.correct}`;
+          
+          if (!loggedQuestions.has(logKey)) {
+            loggedQuestions.add(logKey);
+            addLog(`Q${question.questionNumber}: ${question.questionType} - ${question.correct ? 'Correct' : 'Incorrect'}`);
+          } else {
+            console.log(`Skipping duplicate log for: ${logKey}`);
+          }
         });
       }
       
@@ -126,8 +133,16 @@
         addLog('Collection complete!');
         dispatch('collectionEnd');
         isCollecting = false;
-        chrome.runtime.onMessage.removeListener(handleMessage);
+        if (messageListener) {
+          chrome.runtime.onMessage.removeListener(messageListener);
+          messageListener = null;
+        }
       }
+      
+      // Reset the flag after a short delay
+      setTimeout(() => {
+        isProcessingMessage = false;
+      }, 100);
     }
   }
   
@@ -143,48 +158,22 @@
     showLogs = false;
   }
   
-  // This function will be injected into the page
-  function collectLSATData() {
-    console.log('LSAT data collection script executing...');
-    
-    // Send message to content script to start collection
-    console.log('Sending START_LSAT_COLLECTION message...');
-    window.postMessage({ type: 'START_LSAT_COLLECTION' }, '*');
-    
-    // Also try direct collection if content script doesn't respond
-    setTimeout(() => {
-      console.log('Triggering direct collection fallback...');
-      window.postMessage({ type: 'START_LSAT_COLLECTION' }, '*');
-    }, 1000);
-    
-    // Additional fallback - try to trigger content script directly
-    setTimeout(() => {
-      console.log('Attempting direct content script trigger...');
-      if (window.chrome && window.chrome.runtime) {
-        try {
-          window.chrome.runtime.sendMessage({
-            type: 'LSAT_DATA_UPDATE',
-            data: [],
-            status: 'Direct trigger attempt from injected script',
-            complete: false
-          });
-        } catch (e) {
-          console.log('Direct trigger failed:', e);
-        }
-      }
-    }, 2000);
-  }
-  
-  // Direct collection script that doesn't rely on content script
+  // Direct collection script that extracts question data from DOM
   function directCollectionScript() {
     console.log('Direct collection script executing...');
     
     // Try to find question data directly
     const questions = [];
+    const seenQuestions = new Set();
     
     // Look for ResultListItem containers
     const containers = document.querySelectorAll('.ResultListItem-root, [class*="ResultListItem"]');
     console.log(`Found ${containers.length} ResultListItem containers`);
+    
+    // Extract test name from URL once
+    const url = window.location.href;
+    const urlMatch = url.match(/test[\/\-_]?(\d+)/i);
+    const testName = urlMatch ? `Test ${urlMatch[1]}` : 'Unknown Test';
     
     containers.forEach((container, index) => {
       try {
@@ -194,25 +183,53 @@
         const questionNumber = parseInt(button.textContent.trim());
         if (isNaN(questionNumber)) return;
         
-        const typeElement = container.querySelector('[class*="MuiTypography"]');
-        const questionType = typeElement ? typeElement.textContent.trim() : 'Unknown';
+        // Create a unique key for this question
+        const questionKey = `${testName}_q${questionNumber}`;
         
-        const ariaPressedValue = button.getAttribute('aria-pressed');
-        const isCorrect = ariaPressedValue === 'true';
+        if (seenQuestions.has(questionKey)) {
+          console.log(`Skipping duplicate question: ${questionKey} (container ${index})`);
+          return;
+        }
+        
+        seenQuestions.add(questionKey);
+        
+        const typeElement = container.querySelector('[class*="MuiTypography"]');
+        const questionType = typeElement ? typeElement.textContent.trim() : '';
+        
+        // If questionType is "Unknown", make it empty string
+        const cleanQuestionType = questionType === 'Unknown' ? '' : questionType;
+        
+        // Extract difficulty from aria-label
+        let difficulty = '';
+        const difficultyElement = container.querySelector('[aria-label*="Difficulty"]');
+        if (difficultyElement) {
+          const ariaLabel = difficultyElement.getAttribute('aria-label');
+          const difficultyMatch = ariaLabel.match(/Difficulty\s+(\d+)/i);
+          if (difficultyMatch) {
+            difficulty = difficultyMatch[1]; // Store as string: "1", "2", "3", "4", "5"
+          }
+        }
+        
+        // Check correctness using the css-cuudmx class
+        const hasWrongClass = container.querySelector('.css-cuudmx') !== null;
+        const isCorrect = !hasWrongClass; // If css-cuudmx is present, question is wrong
+        
+        // Create stable question ID without timestamp
+        const questionId = questionKey;
         
         questions.push({
-          questionId: `direct_q${questionNumber}_${Date.now()}`,
+          questionId: questionId,
           questionNumber: questionNumber,
-          questionType: questionType,
-          difficulty: 'Unknown',
-          correct: ariaPressedValue !== null ? isCorrect : null,
-          testName: 'Direct Collection',
+          questionType: cleanQuestionType,
+          difficulty: difficulty,
+          correct: isCorrect,
+          testName: testName,
           questionText: container.textContent.substring(0, 200),
           source: 'direct',
           extractedAt: new Date().toISOString()
         });
         
-        console.log(`Direct extraction - Q${questionNumber}: ${questionType} - ${isCorrect ? 'Correct' : 'Incorrect'}`);
+        console.log(`Direct extraction - Q${questionNumber}: ${cleanQuestionType} - ${isCorrect ? 'Correct' : 'Incorrect'} (css-cuudmx: ${hasWrongClass})`);
       } catch (error) {
         console.warn('Error in direct extraction:', error);
       }
@@ -227,13 +244,13 @@
       });
     }
     
-    console.log(`Direct collection complete. Found ${questions.length} questions`);
+    console.log(`Direct collection complete. Found ${questions.length} unique questions`);
   }
 </script>
 
 <div class="collector">
   <button 
-    class="collect-btn" 
+    class="action-btn collect-btn" 
     class:collecting={isCollecting}
     on:click={startCollection}
     disabled={isCollecting}
@@ -269,29 +286,45 @@
 
 <style>
   .collector {
-    margin-bottom: 20px;
+    margin-bottom: 32px;
+    background: white;
+    border-radius: 12px;
+    padding: 24px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+  }
+  
+  .action-btn {
+    width: 100%;
+    padding: 16px 20px;
+    border: none;
+    border-radius: 8px;
+    font-size: 18px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    margin-bottom: 16px;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+  }
+  
+  .action-btn:hover:not(:disabled) {
+    transform: translateY(-1px);
+    box-shadow: 0 4px 8px rgba(0,0,0,0.15);
+  }
+  
+  .action-btn:disabled {
+    background: #cccccc;
+    cursor: not-allowed;
+    transform: none;
+    box-shadow: none;
   }
   
   .collect-btn {
-    width: 100%;
-    padding: 12px 16px;
     background: #4caf50;
     color: white;
-    border: none;
-    border-radius: 6px;
-    font-size: 16px;
-    font-weight: 500;
-    cursor: pointer;
-    transition: background-color 0.2s;
   }
   
   .collect-btn:hover:not(:disabled) {
     background: #45a049;
-  }
-  
-  .collect-btn:disabled {
-    background: #cccccc;
-    cursor: not-allowed;
   }
   
   .collect-btn.collecting {
@@ -299,43 +332,50 @@
   }
   
   .instructions {
-    margin: 12px 0 0 0;
-    font-size: 12px;
+    margin: 0 0 16px 0;
+    font-size: 14px;
     color: #666;
     text-align: center;
-    line-height: 1.4;
+    line-height: 1.5;
+    background: #f8f9fa;
+    padding: 12px;
+    border-radius: 6px;
   }
   
   .logs-container {
-    margin-top: 16px;
+    margin-top: 20px;
     border: 1px solid #e0e0e0;
-    border-radius: 6px;
+    border-radius: 8px;
     background: #f9f9f9;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.1);
   }
   
   .logs-header {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    padding: 8px 12px;
+    padding: 12px 16px;
     border-bottom: 1px solid #e0e0e0;
     background: #f0f0f0;
+    border-radius: 8px 8px 0 0;
   }
   
   .logs-header h4 {
     margin: 0;
-    font-size: 14px;
+    font-size: 16px;
     color: #333;
+    font-weight: 600;
   }
   
   .clear-logs-btn {
-    padding: 4px 8px;
+    padding: 6px 12px;
     background: #f44336;
     color: white;
     border: none;
-    border-radius: 3px;
-    font-size: 11px;
+    border-radius: 4px;
+    font-size: 12px;
     cursor: pointer;
+    transition: background-color 0.2s;
   }
   
   .clear-logs-btn:hover {
@@ -343,23 +383,25 @@
   }
   
   .logs {
-    max-height: 200px;
+    max-height: 300px;
     overflow-y: auto;
-    padding: 8px;
+    padding: 12px;
   }
   
   .log-entry {
     display: flex;
-    gap: 8px;
-    margin-bottom: 4px;
-    font-size: 11px;
-    line-height: 1.3;
+    gap: 12px;
+    margin-bottom: 6px;
+    font-size: 13px;
+    line-height: 1.4;
+    padding: 4px 0;
   }
   
   .timestamp {
     color: #666;
     font-family: monospace;
-    min-width: 60px;
+    min-width: 80px;
+    font-size: 12px;
   }
   
   .message {

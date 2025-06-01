@@ -8,13 +8,30 @@
     const stats = {};
     
     data.forEach(question => {
-      const type = question.questionType || 'Unknown';
+      const type = question.questionType || '';
+      // Skip empty types but allow questions without difficulty
+      if (!type) return;
+      
       if (!stats[type]) {
-        stats[type] = { total: 0, correct: 0 };
+        stats[type] = { 
+          total: 0, 
+          correct: 0,
+          difficulties: {} // Track by difficulty level
+        };
       }
       stats[type].total++;
       if (question.correct) {
         stats[type].correct++;
+      }
+      
+      // Track by difficulty
+      const difficulty = question.difficulty || 'Unknown';
+      if (!stats[type].difficulties[difficulty]) {
+        stats[type].difficulties[difficulty] = { total: 0, correct: 0 };
+      }
+      stats[type].difficulties[difficulty].total++;
+      if (question.correct) {
+        stats[type].difficulties[difficulty].correct++;
       }
     });
     
@@ -23,7 +40,19 @@
         type,
         total: stat.total,
         correct: stat.correct,
-        accuracy: Math.round((stat.correct / stat.total) * 100)
+        accuracy: Math.round((stat.correct / stat.total) * 100),
+        difficulties: Object.entries(stat.difficulties)
+          .map(([difficulty, diffStat]) => ({
+            difficulty,
+            total: diffStat.total,
+            correct: diffStat.correct,
+            accuracy: Math.round((diffStat.correct / diffStat.total) * 100)
+          }))
+          .sort((a, b) => {
+            if (a.difficulty === 'Unknown') return 1;
+            if (b.difficulty === 'Unknown') return -1;
+            return parseInt(a.difficulty) - parseInt(b.difficulty);
+          })
       }))
       .sort((a, b) => b.total - a.total);
   }
@@ -82,6 +111,31 @@
                 ></div>
               </div>
             </div>
+            
+            <!-- Difficulty breakdown -->
+            {#if stat.difficulties && stat.difficulties.length > 0}
+              <div class="difficulty-breakdown">
+                {#each stat.difficulties as diffStat}
+                  <div class="difficulty-item">
+                    <div class="difficulty-header">
+                      <span class="difficulty-name">
+                        {diffStat.difficulty === 'Unknown' ? 'No Difficulty' : `Level ${diffStat.difficulty}`}
+                      </span>
+                      <span class="difficulty-accuracy" style="color: {getAccuracyColor(diffStat.accuracy)}">{diffStat.accuracy}%</span>
+                    </div>
+                    <div class="difficulty-details">
+                      <span>{diffStat.correct}/{diffStat.total} correct</span>
+                      <div class="difficulty-progress-bar">
+                        <div 
+                          class="difficulty-progress-fill" 
+                          style="width: {diffStat.accuracy}%; background-color: {getAccuracyColor(diffStat.accuracy)}"
+                        ></div>
+                      </div>
+                    </div>
+                  </div>
+                {/each}
+              </div>
+            {/if}
           </div>
         {/each}
       </div>
@@ -191,5 +245,61 @@
     color: #999;
     font-style: italic;
     margin: 20px 0;
+  }
+  
+  .difficulty-breakdown {
+    margin-top: 12px;
+    padding-left: 16px;
+    border-left: 2px solid #e0e0e0;
+  }
+  
+  .difficulty-item {
+    margin-bottom: 8px;
+    padding: 8px;
+    background: #fafafa;
+    border-radius: 4px;
+  }
+  
+  .difficulty-item:last-child {
+    margin-bottom: 0;
+  }
+  
+  .difficulty-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 4px;
+  }
+  
+  .difficulty-name {
+    font-weight: 500;
+    color: #555;
+    font-size: 12px;
+  }
+  
+  .difficulty-accuracy {
+    font-weight: bold;
+    font-size: 12px;
+  }
+  
+  .difficulty-details {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 11px;
+    color: #777;
+  }
+  
+  .difficulty-progress-bar {
+    flex: 1;
+    height: 4px;
+    background: #e0e0e0;
+    border-radius: 2px;
+    overflow: hidden;
+  }
+  
+  .difficulty-progress-fill {
+    height: 100%;
+    transition: width 0.3s ease;
   }
 </style> 
