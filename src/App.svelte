@@ -43,15 +43,14 @@
     <p>Analyze your performance by question type and difficulty</p>
   </header>
   
-  {#if performanceData.length > 0}
-    <button class="action-btn clear-btn" on:click={clearData}>Clear All Data</button>
-  {/if}
-  
+  <!-- Data Collection at the top -->
   <DataCollector 
     bind:isCollecting
+    hasData={performanceData.length > 0}
     on:dataUpdate={handleDataUpdate}
     on:collectionStart={handleCollectionStart}
     on:collectionEnd={handleCollectionEnd}
+    on:clearData={clearData}
   />
   
   {#if collectionStatus}
@@ -77,26 +76,27 @@
 
 <style>
   main {
-    padding: 24px;
-    max-height: 1080px;
+    padding: 20px;
+    height: 900px;
     overflow-y: auto;
     background: #fafafa;
+    box-sizing: border-box;
   }
   
   header {
     text-align: center;
-    margin-bottom: 32px;
+    margin-bottom: 24px;
     border-bottom: 2px solid #e0e0e0;
-    padding-bottom: 24px;
+    padding-bottom: 20px;
     background: white;
     border-radius: 12px;
-    padding: 24px;
+    padding: 20px;
     box-shadow: 0 2px 8px rgba(0,0,0,0.1);
   }
   
   h1 {
-    margin: 0 0 12px 0;
-    font-size: 28px;
+    margin: 0 0 8px 0;
+    font-size: 24px;
     color: #333;
     font-weight: 700;
   }
@@ -104,50 +104,16 @@
   header p {
     margin: 0;
     color: #666;
-    font-size: 16px;
-  }
-  
-  .action-btn {
-    width: 100%;
-    padding: 16px 20px;
-    border: none;
-    border-radius: 8px;
-    font-size: 18px;
-    font-weight: 600;
-    cursor: pointer;
-    transition: all 0.3s ease;
-    margin-bottom: 16px;
-    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-  }
-  
-  .action-btn:hover:not(:disabled) {
-    transform: translateY(-1px);
-    box-shadow: 0 4px 8px rgba(0,0,0,0.15);
-  }
-  
-  .action-btn:disabled {
-    background: #cccccc;
-    cursor: not-allowed;
-    transform: none;
-    box-shadow: none;
-  }
-  
-  .clear-btn {
-    background: #f44336;
-    color: white;
-  }
-  
-  .clear-btn:hover {
-    background: #d32f2f;
+    font-size: 14px;
   }
   
   .status {
-    padding: 12px 16px;
-    margin: 16px 0;
+    padding: 10px 12px;
+    margin: 12px 0;
     border-radius: 8px;
     background: #e3f2fd;
     color: #1976d2;
-    font-size: 16px;
+    font-size: 14px;
     text-align: center;
     border-left: 4px solid #2196f3;
   }
@@ -159,35 +125,35 @@
   }
   
   .analytics {
-    margin-top: 32px;
+    margin-top: 20px;
     background: white;
     border-radius: 12px;
-    padding: 24px;
+    padding: 20px;
     box-shadow: 0 2px 8px rgba(0,0,0,0.1);
   }
   
   .analytics h2 {
-    margin: 0 0 20px 0;
-    font-size: 24px;
+    margin: 0 0 16px 0;
+    font-size: 20px;
     color: #333;
     font-weight: 600;
   }
   
   .analytics p {
-    margin: 0 0 24px 0;
+    margin: 0 0 16px 0;
     font-weight: 500;
     color: #555;
-    font-size: 16px;
+    font-size: 14px;
   }
   
   .empty-state {
     text-align: center;
-    padding: 60px 40px;
+    padding: 40px 20px;
     color: #666;
     background: white;
     border-radius: 12px;
     box-shadow: 0 2px 8px rgba(0,0,0,0.1);
-    font-size: 16px;
+    font-size: 14px;
     line-height: 1.6;
   }
 </style> 

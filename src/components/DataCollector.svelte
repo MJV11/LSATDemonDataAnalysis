@@ -4,11 +4,16 @@
   const dispatch = createEventDispatcher();
   
   export let isCollecting = false;
+  export let hasData = false;
   
   let collectionLogs = [];
   let showLogs = false;
   let messageListener = null;
   let isProcessingMessage = false;
+  
+  function handleClearData() {
+    dispatch('clearData');
+  }
   
   async function startCollection() {
     isCollecting = true;
@@ -249,6 +254,10 @@
 </script>
 
 <div class="collector">
+  {#if hasData}
+    <button class="action-btn clear-btn" on:click={handleClearData}>Clear All Data</button>
+  {/if}
+  
   <button 
     class="action-btn collect-btn" 
     class:collecting={isCollecting}
@@ -383,7 +392,7 @@
   }
   
   .logs {
-    max-height: 300px;
+    max-height: 150px;
     overflow-y: auto;
     padding: 12px;
   }
@@ -391,7 +400,6 @@
   .log-entry {
     display: flex;
     gap: 12px;
-    margin-bottom: 6px;
     font-size: 13px;
     line-height: 1.4;
     padding: 4px 0;
@@ -407,5 +415,14 @@
   .message {
     color: #333;
     flex: 1;
+  }
+  
+  .clear-btn {
+    background: #f44336;
+    color: white;
+  }
+  
+  .clear-btn:hover:not(:disabled) {
+    background: #d32f2f;
   }
 </style> 

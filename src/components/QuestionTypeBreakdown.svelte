@@ -1,8 +1,31 @@
 <script>
   export let data = [];
   
-  $: questionTypeStats = calculateQuestionTypeStats(data);
-  $: difficultyStats = calculateDifficultyStats(data);
+  // Separate data by main question type
+  $: rcData = data.filter(q => isReadingComprehension(q.questionType));
+  $: lrData = data.filter(q => isLogicalReasoning(q.questionType));
+  
+  $: rcQuestionTypeStats = calculateQuestionTypeStats(rcData);
+  $: lrQuestionTypeStats = calculateQuestionTypeStats(lrData);
+  $: rcDifficultyStats = calculateDifficultyStats(rcData);
+  $: lrDifficultyStats = calculateDifficultyStats(lrData);
+  
+  function isReadingComprehension(questionType) {
+    const rcTypes = [
+      'Main Point', 'Stated', 'Supported', 'Meaning', 'Organization', 
+      'Tone', 'Purpose', 'Agree', 'Analogy', 'Strengthen'
+    ];
+    return rcTypes.includes(questionType);
+  }
+  
+  function isLogicalReasoning(questionType) {
+    const lrTypes = [
+      'Weaken', 'Assumption', 'Inference', 'Flaw',
+      'Method of Reasoning', 'Principle', 'Parallel Reasoning',
+      'Resolve', 'Evaluate'
+    ];
+    return lrTypes.includes(questionType);
+  }
   
   function calculateQuestionTypeStats(data) {
     const stats = {};
@@ -36,24 +59,50 @@
     });
     
     return Object.entries(stats)
-      .map(([type, stat]) => ({
-        type,
-        total: stat.total,
-        correct: stat.correct,
-        accuracy: Math.round((stat.correct / stat.total) * 100),
-        difficulties: Object.entries(stat.difficulties)
-          .map(([difficulty, diffStat]) => ({
-            difficulty,
-            total: diffStat.total,
-            correct: diffStat.correct,
-            accuracy: Math.round((diffStat.correct / diffStat.total) * 100)
-          }))
-          .sort((a, b) => {
-            if (a.difficulty === 'Unknown') return 1;
-            if (b.difficulty === 'Unknown') return -1;
-            return parseInt(a.difficulty) - parseInt(b.difficulty);
-          })
-      }))
+      .map(([type, stat]) => {
+        // Create placeholders for all difficulty levels 1-5
+        const allDifficulties = ['1', '2', '3', '4', '5'];
+        const difficulties = allDifficulties.map(difficulty => {
+          const diffStat = stat.difficulties[difficulty];
+          if (diffStat) {
+            return {
+              difficulty,
+              total: diffStat.total,
+              correct: diffStat.correct,
+              accuracy: Math.round((diffStat.correct / diffStat.total) * 100),
+              hasData: true
+            };
+          } else {
+            return {
+              difficulty,
+              total: 0,
+              correct: 0,
+              accuracy: 0,
+              hasData: false
+            };
+          }
+        });
+        
+        // Add Unknown difficulty if it exists
+        if (stat.difficulties['Unknown']) {
+          const unknownStat = stat.difficulties['Unknown'];
+          difficulties.push({
+            difficulty: 'Unknown',
+            total: unknownStat.total,
+            correct: unknownStat.correct,
+            accuracy: Math.round((unknownStat.correct / unknownStat.total) * 100),
+            hasData: true
+          });
+        }
+        
+        return {
+          type,
+          total: stat.total,
+          correct: stat.correct,
+          accuracy: Math.round((stat.correct / stat.total) * 100),
+          difficulties
+        };
+      })
       .sort((a, b) => b.total - a.total);
   }
   
@@ -93,10 +142,10 @@
 
 <div class="breakdown">
   <div class="section">
-    <h3>Performance by Question Type</h3>
-    {#if questionTypeStats.length > 0}
+    <h3>Reading Comprehension</h3>
+    {#if rcQuestionTypeStats.length > 0}
       <div class="stats-list">
-        {#each questionTypeStats as stat}
+        {#each rcQuestionTypeStats as stat}
           <div class="stat-item">
             <div class="stat-header">
               <span class="type-name">{stat.type}</span>
@@ -116,22 +165,74 @@
             {#if stat.difficulties && stat.difficulties.length > 0}
               <div class="difficulty-breakdown">
                 {#each stat.difficulties as diffStat}
-                  <div class="difficulty-item">
-                    <div class="difficulty-header">
-                      <span class="difficulty-name">
-                        {diffStat.difficulty === 'Unknown' ? 'No Difficulty' : `Level ${diffStat.difficulty}`}
-                      </span>
-                      <span class="difficulty-accuracy" style="color: {getAccuracyColor(diffStat.accuracy)}">{diffStat.accuracy}%</span>
-                    </div>
-                    <div class="difficulty-details">
-                      <span>{diffStat.correct}/{diffStat.total} correct</span>
-                      <div class="difficulty-progress-bar">
+                  <div class="difficulty-item-inline" class:no-data={!diffStat.hasData}>
+                    <span class="difficulty-name">
+                      {diffStat.difficulty === 'Unknown' ? 'No Difficulty' : `Level ${diffStat.difficulty}`}
+                    </span>
+                    {#if diffStat.hasData}
+                      <span class="difficulty-stats">{diffStat.correct}/{diffStat.total}</span>
+                      <div class="difficulty-progress-bar-inline">
                         <div 
                           class="difficulty-progress-fill" 
                           style="width: {diffStat.accuracy}%; background-color: {getAccuracyColor(diffStat.accuracy)}"
                         ></div>
                       </div>
-                    </div>
+                      <span class="difficulty-accuracy" style="color: {getAccuracyColor(diffStat.accuracy)}">{diffStat.accuracy}%</span>
+                    {:else}
+                      <span class="difficulty-placeholder">No data</span>
+                    {/if}
+                  </div>
+                {/each}
+              </div>
+            {/if}
+          </div>
+        {/each}
+      </div>
+    {:else}
+      <p class="no-data">No question type data available</p>
+    {/if}
+  </div>
+  
+  <div class="section">
+    <h3>Logical Reasoning</h3>
+    {#if lrQuestionTypeStats.length > 0}
+      <div class="stats-list">
+        {#each lrQuestionTypeStats as stat}
+          <div class="stat-item">
+            <div class="stat-header">
+              <span class="type-name">{stat.type}</span>
+              <span class="accuracy" style="color: {getAccuracyColor(stat.accuracy)}">{stat.accuracy}%</span>
+            </div>
+            <div class="stat-details">
+              <span>{stat.correct}/{stat.total} correct</span>
+              <div class="progress-bar">
+                <div 
+                  class="progress-fill" 
+                  style="width: {stat.accuracy}%; background-color: {getAccuracyColor(stat.accuracy)}"
+                ></div>
+              </div>
+            </div>
+            
+            <!-- Difficulty breakdown -->
+            {#if stat.difficulties && stat.difficulties.length > 0}
+              <div class="difficulty-breakdown">
+                {#each stat.difficulties as diffStat}
+                  <div class="difficulty-item-inline" class:no-data={!diffStat.hasData}>
+                    <span class="difficulty-name">
+                      {diffStat.difficulty === 'Unknown' ? 'No Difficulty' : `Level ${diffStat.difficulty}`}
+                    </span>
+                    {#if diffStat.hasData}
+                      <span class="difficulty-stats">{diffStat.correct}/{diffStat.total}</span>
+                      <div class="difficulty-progress-bar-inline">
+                        <div 
+                          class="difficulty-progress-fill" 
+                          style="width: {diffStat.accuracy}%; background-color: {getAccuracyColor(diffStat.accuracy)}"
+                        ></div>
+                      </div>
+                      <span class="difficulty-accuracy" style="color: {getAccuracyColor(diffStat.accuracy)}">{diffStat.accuracy}%</span>
+                    {:else}
+                      <span class="difficulty-placeholder">No data</span>
+                    {/if}
                   </div>
                 {/each}
               </div>
@@ -146,27 +247,81 @@
   
   <div class="section">
     <h3>Performance by Difficulty</h3>
-    {#if difficultyStats.length > 0}
-      <div class="stats-list">
-        {#each difficultyStats as stat}
-          <div class="stat-item">
-            <div class="stat-header">
-              <span class="type-name">{stat.difficulty}</span>
-              <span class="accuracy" style="color: {getAccuracyColor(stat.accuracy)}">{stat.accuracy}%</span>
-            </div>
-            <div class="stat-details">
-              <span>{stat.correct}/{stat.total} correct</span>
-              <div class="progress-bar">
+    {#if rcDifficultyStats.length > 0}
+      <div class="stat-item">
+        <div class="stat-header">
+          <span class="type-name">Reading Comprehension - All Difficulties</span>
+          <span class="accuracy" style="color: {getAccuracyColor(Math.round((rcDifficultyStats.reduce((sum, s) => sum + s.correct, 0) / rcDifficultyStats.reduce((sum, s) => sum + s.total, 0)) * 100))}">
+            {Math.round((rcDifficultyStats.reduce((sum, s) => sum + s.correct, 0) / rcDifficultyStats.reduce((sum, s) => sum + s.total, 0)) * 100)}%
+          </span>
+        </div>
+        <div class="stat-details">
+          <span>{rcDifficultyStats.reduce((sum, s) => sum + s.correct, 0)}/{rcDifficultyStats.reduce((sum, s) => sum + s.total, 0)} correct</span>
+          <div class="progress-bar">
+            <div 
+              class="progress-fill" 
+              style="width: {Math.round((rcDifficultyStats.reduce((sum, s) => sum + s.correct, 0) / rcDifficultyStats.reduce((sum, s) => sum + s.total, 0)) * 100)}%; background-color: {getAccuracyColor(Math.round((rcDifficultyStats.reduce((sum, s) => sum + s.correct, 0) / rcDifficultyStats.reduce((sum, s) => sum + s.total, 0)) * 100))}"
+            ></div>
+          </div>
+        </div>
+        
+        <!-- Difficulty breakdown -->
+        <div class="difficulty-breakdown">
+          {#each rcDifficultyStats as stat}
+            <div class="difficulty-item-inline">
+              <span class="difficulty-name">Level {stat.difficulty}</span>
+              <span class="difficulty-stats">{stat.correct}/{stat.total}</span>
+              <div class="difficulty-progress-bar-inline">
                 <div 
-                  class="progress-fill" 
+                  class="difficulty-progress-fill" 
                   style="width: {stat.accuracy}%; background-color: {getAccuracyColor(stat.accuracy)}"
                 ></div>
               </div>
+              <span class="difficulty-accuracy" style="color: {getAccuracyColor(stat.accuracy)}">{stat.accuracy}%</span>
             </div>
-          </div>
-        {/each}
+          {/each}
+        </div>
       </div>
-    {:else}
+    {/if}
+    
+    {#if lrDifficultyStats.length > 0}
+      <div class="stat-item">
+        <div class="stat-header">
+          <span class="type-name">Logical Reasoning - All Difficulties</span>
+          <span class="accuracy" style="color: {getAccuracyColor(Math.round((lrDifficultyStats.reduce((sum, s) => sum + s.correct, 0) / lrDifficultyStats.reduce((sum, s) => sum + s.total, 0)) * 100))}">
+            {Math.round((lrDifficultyStats.reduce((sum, s) => sum + s.correct, 0) / lrDifficultyStats.reduce((sum, s) => sum + s.total, 0)) * 100)}%
+          </span>
+        </div>
+        <div class="stat-details">
+          <span>{lrDifficultyStats.reduce((sum, s) => sum + s.correct, 0)}/{lrDifficultyStats.reduce((sum, s) => sum + s.total, 0)} correct</span>
+          <div class="progress-bar">
+            <div 
+              class="progress-fill" 
+              style="width: {Math.round((lrDifficultyStats.reduce((sum, s) => sum + s.correct, 0) / lrDifficultyStats.reduce((sum, s) => sum + s.total, 0)) * 100)}%; background-color: {getAccuracyColor(Math.round((lrDifficultyStats.reduce((sum, s) => sum + s.correct, 0) / lrDifficultyStats.reduce((sum, s) => sum + s.total, 0)) * 100))}"
+            ></div>
+          </div>
+        </div>
+        
+        <!-- Difficulty breakdown -->
+        <div class="difficulty-breakdown">
+          {#each lrDifficultyStats as stat}
+            <div class="difficulty-item-inline">
+              <span class="difficulty-name">Level {stat.difficulty}</span>
+              <span class="difficulty-stats">{stat.correct}/{stat.total}</span>
+              <div class="difficulty-progress-bar-inline">
+                <div 
+                  class="difficulty-progress-fill" 
+                  style="width: {stat.accuracy}%; background-color: {getAccuracyColor(stat.accuracy)}"
+                ></div>
+              </div>
+              <span class="difficulty-accuracy" style="color: {getAccuracyColor(stat.accuracy)}">{stat.accuracy}%</span>
+            </div>
+          {/each}
+        </div>
+      </div>
+    {/if}
+    
+    {#if rcDifficultyStats.length === 0 && lrDifficultyStats.length === 0}
       <p class="no-data">No difficulty data available</p>
     {/if}
   </div>
@@ -244,31 +399,12 @@
     text-align: center;
     color: #999;
     font-style: italic;
-    margin: 20px 0;
   }
   
   .difficulty-breakdown {
     margin-top: 12px;
     padding-left: 16px;
     border-left: 2px solid #e0e0e0;
-  }
-  
-  .difficulty-item {
-    margin-bottom: 8px;
-    padding: 8px;
-    background: #fafafa;
-    border-radius: 4px;
-  }
-  
-  .difficulty-item:last-child {
-    margin-bottom: 0;
-  }
-  
-  .difficulty-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    margin-bottom: 4px;
   }
   
   .difficulty-name {
@@ -282,15 +418,23 @@
     font-size: 12px;
   }
   
-  .difficulty-details {
+  .difficulty-progress-fill {
+    height: 100%;
+    transition: width 0.3s ease;
+  }
+  
+  .difficulty-item-inline {
     display: flex;
     align-items: center;
     gap: 8px;
-    font-size: 11px;
-    color: #777;
   }
   
-  .difficulty-progress-bar {
+  .difficulty-stats {
+    font-size: 12px;
+    color: #666;
+  }
+  
+  .difficulty-progress-bar-inline {
     flex: 1;
     height: 4px;
     background: #e0e0e0;
@@ -298,8 +442,17 @@
     overflow: hidden;
   }
   
-  .difficulty-progress-fill {
-    height: 100%;
-    transition: width 0.3s ease;
+  .difficulty-item-inline.no-data {
+    opacity: 0.5;
+  }
+  
+  .difficulty-item-inline.no-data .difficulty-name {
+    color: #999;
+  }
+  
+  .difficulty-placeholder {
+    font-style: italic;
+    color: #999;
+    font-size: 12px;
   }
 </style> 

@@ -6,8 +6,10 @@
   
   export let data = [];
   
-  let chartCanvas;
-  let chart;
+  let rcChartCanvas;
+  let rcChart;
+  let lrChartCanvas;
+  let lrChart;
   
   // Filter controls
   let showQuestionTypes = {};
@@ -15,107 +17,176 @@
   let showCorrect = true;
   let showIncorrect = true;
   
-  $: questionTypes = [...new Set(data.map(q => q.questionType).filter(t => t))];
+  // Separate data by main question type
+  $: rcData = data.filter(q => isReadingComprehension(q.questionType));
+  $: lrData = data.filter(q => isLogicalReasoning(q.questionType));
+  
+  $: rcQuestionTypes = [...new Set(rcData.map(q => q.questionType).filter(t => t))];
+  $: lrQuestionTypes = [...new Set(lrData.map(q => q.questionType).filter(t => t))];
   $: difficulties = [...new Set(data.map(q => q.difficulty).filter(d => d))].sort();
   
   // Initialize question type toggles
   $: {
-    questionTypes.forEach(type => {
+    [...rcQuestionTypes, ...lrQuestionTypes].forEach(type => {
       if (!(type in showQuestionTypes)) {
         showQuestionTypes[type] = true;
       }
     });
   }
   
+  function isReadingComprehension(questionType) {
+    const rcTypes = [
+      'Main Point', 'Stated', 'Supported', 'Meaning', 'Organization', 
+      'Tone', 'Purpose', 'Agree', 'Analogy', 'Strengthen'
+    ];
+    return rcTypes.includes(questionType);
+  }
+  
+  function isLogicalReasoning(questionType) {
+    const lrTypes = [
+      'Weaken', 'Assumption', 'Inference', 'Flaw',
+      'Method of Reasoning', 'Principle', 'Parallel Reasoning',
+      'Resolve', 'Evaluate'
+    ];
+    return lrTypes.includes(questionType);
+  }
+  
   onMount(() => {
-    createChart();
+    createRCChart();
+    createLRChart();
   });
   
   afterUpdate(() => {
-    if (chart && data.length > 0) {
-      updateChart();
+    if (rcChart && rcData.length > 0) {
+      updateRCChart();
+    }
+    if (lrChart && lrData.length > 0) {
+      updateLRChart();
     }
   });
   
-  function createChart() {
-    if (!chartCanvas) return;
+  function createRCChart() {
+    if (!rcChartCanvas) return;
     
-    const ctx = chartCanvas.getContext('2d');
+    const ctx = rcChartCanvas.getContext('2d');
     
-    chart = new Chart(ctx, {
+    rcChart = new Chart(ctx, {
       type: 'bar',
       data: {
         labels: [],
         datasets: []
       },
       options: {
-        responsive: true,
-        maintainAspectRatio: false,
-        scales: {
-          x: {
-            stacked: true,
-            title: {
-              display: true,
-              text: 'Question Types'
-            }
-          },
-          y: {
-            stacked: true,
-            beginAtZero: true,
-            title: {
-              display: true,
-              text: 'Number of Questions'
-            }
-          }
-        },
-        plugins: {
-          legend: {
-            display: false
-          },
-          title: {
-            display: true,
-            text: 'Performance by Question Type and Difficulty',
-            font: {
-              size: 16,
-              weight: 'bold'
-            }
-          },
-          tooltip: {
-            position: 'nearest',
-            yAlign: 'center',
-            callbacks: {
-              title: function(context) {
-                return context[0].dataset.label.split(' - ')[0];
-              },
-              label: function(context) {
-                const difficulty = context.dataset.label.split(' - ')[0];
-                const correctness = context.dataset.label.split(' - ')[1];
-                const count = context.parsed.y;
-                return `${difficulty} (${correctness}): ${count} questions`;
-              }
-            }
-          }
-        },
+        ...getChartOptions('Reading Comprehension Performance'),
         animation: {
           onComplete: function() {
-            addDifficultyLabels();
+            addDifficultyLabelsToChart(rcChart);
           }
         }
       }
     });
   }
   
-  function addDifficultyLabels() {
-    if (!chart) return;
+  function createLRChart() {
+    if (!lrChartCanvas) return;
     
-    const ctx = chart.ctx;
+    const ctx = lrChartCanvas.getContext('2d');
+    
+    lrChart = new Chart(ctx, {
+      type: 'bar',
+      data: {
+        labels: [],
+        datasets: []
+      },
+      options: {
+        ...getChartOptions('Logical Reasoning Performance'),
+        animation: {
+          onComplete: function() {
+            addDifficultyLabelsToChart(lrChart);
+          }
+        }
+      }
+    });
+  }
+  
+  function getChartOptions(title) {
+    return {
+      responsive: true,
+      maintainAspectRatio: false,
+      scales: {
+        x: {
+          stacked: true,
+          title: {
+            display: true,
+            text: 'Question Types'
+          }
+        },
+        y: {
+          stacked: true,
+          beginAtZero: true,
+          ticks: {
+            stepSize: 1,
+            callback: function(value) {
+              if (Number.isInteger(value)) {
+                return value;
+              }
+            }
+          },
+          title: {
+            display: true,
+            text: 'Number of Questions'
+          }
+        }
+      },
+      plugins: {
+        legend: {
+          display: false
+        },
+        title: {
+          display: true,
+          text: title,
+          font: {
+            size: 16,
+            weight: 'bold'
+          }
+        },
+        tooltip: {
+          position: 'nearest',
+          yAlign: 'center',
+          xAlign: 'center',
+          displayColors: false,
+          callbacks: {
+            title: function(context) {
+              return context[0].dataset.label.split(' - ')[0];
+            },
+            label: function(context) {
+              const difficulty = context.dataset.label.split(' - ')[0];
+              const correctness = context.dataset.label.split(' - ')[1];
+              const count = context.parsed.y;
+              return `${difficulty} (${correctness}): ${count} questions`;
+            }
+          }
+        }
+      }
+    };
+  }
+  
+  function addDifficultyLabels() {
+    addDifficultyLabelsToChart(rcChart);
+    addDifficultyLabelsToChart(lrChart);
+  }
+  
+  function addDifficultyLabelsToChart(chartInstance) {
+    if (!chartInstance) return;
+    
+    const ctx = chartInstance.ctx;
     ctx.font = '12px Arial';
     ctx.fillStyle = 'white';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     
-    chart.data.datasets.forEach((dataset, datasetIndex) => {
-      const meta = chart.getDatasetMeta(datasetIndex);
+    chartInstance.data.datasets.forEach((dataset, datasetIndex) => {
+      const meta = chartInstance.getDatasetMeta(datasetIndex);
       if (!meta.hidden) {
         meta.data.forEach((bar, index) => {
           const value = dataset.data[index];
@@ -130,11 +201,11 @@
     });
   }
   
-  function updateChart() {
-    if (!chart || !data.length) return;
+  function updateRCChart() {
+    if (!rcChart || !rcData.length) return;
     
-    // Filter data based on controls
-    const filteredData = data.filter(q => {
+    // Filter RC data based on controls
+    const filteredData = rcData.filter(q => {
       if (!q.questionType || !(q.questionType in showQuestionTypes) || !showQuestionTypes[q.questionType]) return false;
       if (q.difficulty && !showDifficulties[q.difficulty]) return false;
       if (q.correct && !showCorrect) return false;
@@ -142,10 +213,31 @@
       return true;
     });
     
-    // Get active question types and difficulties
-    const activeQuestionTypes = questionTypes.filter(type => showQuestionTypes[type]);
+    const activeQuestionTypes = rcQuestionTypes.filter(type => showQuestionTypes[type]);
     const activeDifficulties = difficulties.filter(diff => showDifficulties[diff]);
     
+    updateChartData(rcChart, filteredData, activeQuestionTypes, activeDifficulties);
+  }
+  
+  function updateLRChart() {
+    if (!lrChart || !lrData.length) return;
+    
+    // Filter LR data based on controls
+    const filteredData = lrData.filter(q => {
+      if (!q.questionType || !(q.questionType in showQuestionTypes) || !showQuestionTypes[q.questionType]) return false;
+      if (q.difficulty && !showDifficulties[q.difficulty]) return false;
+      if (q.correct && !showCorrect) return false;
+      if (!q.correct && !showIncorrect) return false;
+      return true;
+    });
+    
+    const activeQuestionTypes = lrQuestionTypes.filter(type => showQuestionTypes[type]);
+    const activeDifficulties = difficulties.filter(diff => showDifficulties[diff]);
+    
+    updateChartData(lrChart, filteredData, activeQuestionTypes, activeDifficulties);
+  }
+  
+  function updateChartData(chartInstance, filteredData, activeQuestionTypes, activeDifficulties) {
     // Prepare chart data
     const chartData = {
       labels: activeQuestionTypes,
@@ -193,8 +285,8 @@
       });
     }
     
-    chart.data = chartData;
-    chart.update();
+    chartInstance.data = chartData;
+    chartInstance.update();
   }
   
   function getDifficultyColor(difficulty, isCorrect) {
@@ -208,8 +300,11 @@
     return baseColors[difficulty] || (isCorrect ? '#4caf50' : '#f44336');
   }
   
-  $: if (chart && data.length > 0) {
-    updateChart();
+  $: if (rcChart && rcData.length > 0) {
+    updateRCChart();
+  }
+  $: if (lrChart && lrData.length > 0) {
+    updateLRChart();
   }
 </script>
 
@@ -221,12 +316,15 @@
       <div class="control-section">
         <h4>Question Types</h4>
         <div class="checkbox-list">
-          {#each questionTypes as type}
+          {#each [...rcQuestionTypes, ...lrQuestionTypes] as type}
             <label class="checkbox-item">
               <input 
                 type="checkbox" 
                 bind:checked={showQuestionTypes[type]}
-                on:change={() => updateChart()}
+                on:change={() => {
+                  updateRCChart();
+                  updateLRChart();
+                }}
               />
               <span class="checkbox-label">{type}</span>
             </label>
@@ -244,7 +342,10 @@
                 <input 
                   type="checkbox" 
                   bind:checked={showDifficulties[difficulty]}
-                  on:change={() => updateChart()}
+                  on:change={() => {
+                    updateRCChart();
+                    updateLRChart();
+                  }}
                 />
                 <span class="checkbox-label">Level {difficulty}</span>
               </label>
@@ -259,7 +360,10 @@
               <input 
                 type="checkbox" 
                 bind:checked={showCorrect}
-                on:change={() => updateChart()}
+                on:change={() => {
+                  updateRCChart();
+                  updateLRChart();
+                }}
               />
               <span class="checkbox-label correct">Correct</span>
             </label>
@@ -267,7 +371,10 @@
               <input 
                 type="checkbox" 
                 bind:checked={showIncorrect}
-                on:change={() => updateChart()}
+                on:change={() => {
+                  updateRCChart();
+                  updateLRChart();
+                }}
               />
               <span class="checkbox-label incorrect">Incorrect</span>
             </label>
@@ -277,10 +384,18 @@
     </div>
   </div>
   
-  <!-- Chart -->
-  <div class="chart-wrapper">
-    <canvas bind:this={chartCanvas} width="900" height="500"></canvas>
-  </div>
+  <!-- Charts -->
+  {#if rcData.length > 0}
+    <div class="chart-wrapper">
+      <canvas bind:this={rcChartCanvas} width="100%" height="400"></canvas>
+    </div>
+  {/if}
+  
+  {#if lrData.length > 0}
+    <div class="chart-wrapper">
+      <canvas bind:this={lrChartCanvas} width="100%" height="400"></canvas>
+    </div>
+  {/if}
   
   {#if data.length > 0}
     <div class="stats">
@@ -292,6 +407,18 @@
         <span class="label">Overall Accuracy:</span>
         <span class="value">{Math.round((data.filter(q => q.correct).length / data.length) * 100)}%</span>
       </div>
+      {#if rcData.length > 0}
+        <div class="stat">
+          <span class="label">RC Accuracy:</span>
+          <span class="value">{Math.round((rcData.filter(q => q.correct).length / rcData.length) * 100)}%</span>
+        </div>
+      {/if}
+      {#if lrData.length > 0}
+        <div class="stat">
+          <span class="label">LR Accuracy:</span>
+          <span class="value">{Math.round((lrData.filter(q => q.correct).length / lrData.length) * 100)}%</span>
+        </div>
+      {/if}
     </div>
   {/if}
 </div>
@@ -306,8 +433,8 @@
   }
   
   .controls {
-    margin-bottom: 32px;
-    padding: 20px;
+    margin-bottom: 20px;
+    padding: 16px;
     background: #f8f9fa;
     border-radius: 10px;
     border: 1px solid #e0e0e0;
@@ -316,7 +443,7 @@
   .controls-layout {
     display: grid;
     grid-template-columns: 1fr 1fr;
-    gap: 32px;
+    gap: 20px;
   }
   
   .control-section {
@@ -325,7 +452,7 @@
   }
   
   .control-group {
-    margin-bottom: 20px;
+    margin-bottom: 16px;
   }
   
   .control-group:last-child {
@@ -334,8 +461,8 @@
   
   .control-group h4,
   .control-section > h4 {
-    margin: 0 0 12px 0;
-    font-size: 16px;
+    margin: 0 0 8px 0;
+    font-size: 14px;
     color: #333;
     font-weight: 600;
   }
@@ -343,7 +470,7 @@
   .checkbox-list {
     display: flex;
     flex-direction: column;
-    gap: 8px;
+    gap: 2px;
   }
   
   .checkbox-item {
@@ -351,12 +478,10 @@
     align-items: center;
     gap: 8px;
     cursor: pointer;
-    padding: 4px 0;
   }
   
   .checkbox-item input[type="checkbox"] {
-    width: 16px;
-    height: 16px;
+    height: 14px;
     cursor: pointer;
   }
   
@@ -378,16 +503,17 @@
   }
   
   .chart-wrapper {
-    height: 500px;
-    margin-bottom: 24px;
+    height: 400px;
+    margin-bottom: 20px;
     background: white;
     border-radius: 8px;
-    padding: 16px;
+    padding: 12px;
     border: 1px solid #f0f0f0;
   }
   
   canvas {
-    max-height: 500px;
+    max-height: 400px;
+    width: 100% !important;
   }
   
   .stats {
